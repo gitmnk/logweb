@@ -3,7 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { FormEvent, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { startVoiceRecording, stopVoiceRecording } from '@/utils/speech';
+import { startVoiceRecording, stopVoiceRecording, isBrowserSupportsSpeech } from '@/utils/speech';
 
 interface JournalEntry {
   id: string;
@@ -19,10 +19,41 @@ export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [isMicAvailable, setIsMicAvailable] = useState<boolean | null>(null);
+  const [isSecureContext, setIsSecureContext] = useState(true);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const router = useRouter();
 
+  const addDebugInfo = (message: string) => {
+    setDebugInfo(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+  };
+
   useEffect(() => {
-    fetchEntries();
+    // Check if we're in a secure context
+    if (typeof window !== 'undefined') {
+      setIsSecureContext(window.isSecureContext);
+    }
+
+    // Check for microphone availability when component mounts
+    const checkMicrophoneAvailability = async () => {
+      try {
+        // First check if we have the necessary API
+        if (!navigator?.mediaDevices?.getUserMedia) {
+          console.log('MediaDevices interface not available');
+          setIsMicAvailable(false);
+          return;
+        }
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const hasMicrophone = devices.some(device => device.kind === 'audioinput');
+        setIsMicAvailable(hasMicrophone);
+      } catch (error) {
+        console.error('Failed to check microphone availability:', error);
+        setIsMicAvailable(false);
+      }
+    };
+
+    checkMicrophoneAvailability();
   }, []);
 
   const fetchEntries = async () => {
@@ -131,30 +162,164 @@ export default function JournalPage() {
     <div className="max-w-2xl mx-auto font-['Helvetica']">
       <h1 className="text-3xl font-bold mb-8">My Journal</h1>
 
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
+      {!isSecureContext && (
+        <div className="mb-4 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+          <p className="font-medium">⚠️ Secure Connection Required</p>
+          <p className="text-sm">Voice recording requires a secure (HTTPS) connection. Please use a secure connection to enable voice input.</p>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="mb-8">
-        <div className="mb-4">
-          <label className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="space-y-4">
+          {/* Debug info container */}
+          <div className="h-32 overflow-auto bg-gray-100 p-2 rounded text-xs font-mono">
+            {debugInfo.map((info, index) => (
+              <div key={index}>{info}</div>
+            ))}
+            {debugInfo.length === 0 && (
+              <div className="text-gray-500">Waiting for voice input...</div>
+            )}
+          </div>
+
+          {/* Error container */}
+          <div className="h-12">
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <label className="block text-gray-700 text-sm font-bold">
             What's on your mind?
           </label>
-          <div className="relative">
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 min-h-[200px]"
-              placeholder="Start writing or use voice input..."
-            />
+          
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 min-h-[200px]"
+            placeholder="Start writing or use voice input..."
+          />
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={handleVoiceInput}
-              className={`absolute bottom-2 right-2 p-2 rounded-full ${
-                isRecording ? 'bg-red-500' : 'bg-blue-500'
-              } text-white`}
+              onTouchStart={async (e) => {
+                e.preventDefault();
+                if (isRecording || !isMicAvailable) return;
+                setError('');
+                addDebugInfo('Starting voice recording (touch)');
+                try {
+                  const success = await startVoiceRecording(
+                    (text) => {
+                      addDebugInfo(`Received text: ${text}`);
+                      if (text.trim()) {
+                        setContent((prev) => {
+                          const newContent = prev.trim() ? `${prev.trim()} ${text.trim()}` : text.trim();
+                          addDebugInfo(`Updated content: ${newContent}`);
+                          return newContent;
+                        });
+                      }
+                    },
+                    (error) => {
+                      addDebugInfo(`Error: ${error.message}`);
+                      setError(error.message || 'Voice recognition failed. Please try again.');
+                      setIsRecording(false);
+                    },
+                    addDebugInfo
+                  );
+                  if (success) {
+                    setIsRecording(true);
+                    addDebugInfo('Recording started successfully');
+                  }
+                } catch (error) {
+                  addDebugInfo(`Error starting recording: ${error}`);
+                  setError('Failed to start voice recording. Please try again.');
+                  setIsRecording(false);
+                }
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                if (isRecording) {
+                  addDebugInfo('Stopping recording (touch)');
+                  stopVoiceRecording(addDebugInfo);
+                  setIsRecording(false);
+                }
+              }}
+              onTouchCancel={(e) => {
+                e.preventDefault();
+                if (isRecording) {
+                  addDebugInfo('Recording cancelled (touch)');
+                  stopVoiceRecording(addDebugInfo);
+                  setIsRecording(false);
+                }
+              }}
+              onMouseDown={async (e) => {
+                e.preventDefault();
+                if (isRecording || !isMicAvailable) return;
+                setError('');
+                addDebugInfo('Starting voice recording (mouse)');
+                try {
+                  const success = await startVoiceRecording(
+                    (text) => {
+                      addDebugInfo(`Received text: ${text}`);
+                      if (text.trim()) {
+                        setContent((prev) => {
+                          const newContent = prev.trim() ? `${prev.trim()} ${text.trim()}` : text.trim();
+                          addDebugInfo(`Updated content: ${newContent}`);
+                          return newContent;
+                        });
+                      }
+                    },
+                    (error) => {
+                      addDebugInfo(`Error: ${error.message}`);
+                      setError(error.message || 'Voice recognition failed. Please try again.');
+                      setIsRecording(false);
+                    },
+                    addDebugInfo
+                  );
+                  if (success) {
+                    setIsRecording(true);
+                    addDebugInfo('Recording started successfully');
+                  }
+                } catch (error) {
+                  addDebugInfo(`Error starting recording: ${error}`);
+                  setError('Failed to start voice recording. Please try again.');
+                  setIsRecording(false);
+                }
+              }}
+              onMouseUp={(e) => {
+                e.preventDefault();
+                if (isRecording) {
+                  addDebugInfo('Stopping recording (mouse)');
+                  stopVoiceRecording(addDebugInfo);
+                  setIsRecording(false);
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.preventDefault();
+                if (isRecording) {
+                  addDebugInfo('Recording cancelled (mouse leave)');
+                  stopVoiceRecording(addDebugInfo);
+                  setIsRecording(false);
+                }
+              }}
+              disabled={!isBrowserSupportsSpeech() || !isMicAvailable}
+              title={
+                !isBrowserSupportsSpeech() 
+                  ? 'Speech recognition is not supported in your browser' 
+                  : !isMicAvailable 
+                    ? 'No microphone found. Please connect a microphone and refresh the page.'
+                    : isRecording 
+                      ? 'Release to stop recording' 
+                      : 'Press and hold to record'
+              }
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                isRecording 
+                  ? 'bg-red-500 ring-4 ring-red-200' 
+                  : 'bg-blue-500 hover:bg-blue-600'
+              } text-white ${(!isBrowserSupportsSpeech() || !isMicAvailable) ? 'opacity-50 cursor-not-allowed' : ''} select-none`}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -162,7 +327,7 @@ export default function JournalPage() {
                 viewBox="0 0 24 24"
                 strokeWidth={1.5}
                 stroke="currentColor"
-                className="w-6 h-6"
+                className={`w-6 h-6 ${isRecording ? 'animate-pulse' : ''}`}
               >
                 <path
                   strokeLinecap="round"
@@ -170,16 +335,17 @@ export default function JournalPage() {
                   d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
                 />
               </svg>
+              <span className="min-w-[100px]">{isRecording ? 'Recording...' : 'Press to speak'}</span>
+            </button>
+
+            <button
+              type="submit"
+              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2"
+            >
+              Save Entry
             </button>
           </div>
         </div>
-
-        <button
-          type="submit"
-          className="bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2"
-        >
-          Save Entry
-        </button>
       </form>
 
       <div className="space-y-8">

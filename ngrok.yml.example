@@ -1,0 +1,9 @@
+version: "2"
+authtoken: ${NGROK_AUTH_TOKEN}  # Replace with your ngrok auth token
+tunnels:
+  web:
+    addr: 3000
+    proto: http
+    schemes:
+      - https
+    inspect: false 

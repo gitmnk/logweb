@@ -81,3 +81,34 @@
 - Mobile Chrome specific configurations
 - Touch and mouse event handling
 - Error handling and debug logging implemented 
+
+### Local Development Setup
+
+#### Option 1: Using Chromium with Web Security Disabled
+For testing speech recognition on localhost (development only):
+```bash
+# Run Chromium with web security disabled (development only, do not use for regular browsing)
+chromium --disable-web-security --user-data-dir="/tmp/chrome_dev" --unsafely-treat-insecure-origin-as-secure="http://localhost:3000"
+```
+
+**Important**: This configuration should only be used for local development and testing. For production, always use HTTPS.
+
+#### Option 2: Using ngrok for HTTPS
+For secure HTTPS access during development:
+
+1. Install ngrok from https://ngrok.com/download
+2. Copy the example configuration:
+```bash
+cp ngrok.yml.example ngrok.yml
+```
+3. Get your auth token from https://dashboard.ngrok.com/get-started/your-authtoken
+4. Replace `${NGROK_AUTH_TOKEN}` in `ngrok.yml` with your token
+5. Start ngrok:
+```bash
+ngrok start --config ngrok.yml web
+```
+
+**Note**: 
+- The `ngrok.yml` file is gitignored to protect your auth token
+- Use the HTTPS URL provided by ngrok to test speech recognition
+- Free tier of ngrok limits you to 1 simultaneous session 

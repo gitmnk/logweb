@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { FaMicrophone, FaStop } from 'react-icons/fa';
+import AudioLevelIndicator from './AudioLevelIndicator';
 
 interface VoiceInputProps {
   onTranscript: (text: string) => void;
@@ -10,6 +11,7 @@ interface VoiceInputProps {
 const VoiceInput = ({ onTranscript }: VoiceInputProps) => {
   const [isListening, setIsListening] = useState(false);
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -58,18 +60,34 @@ const VoiceInput = ({ onTranscript }: VoiceInputProps) => {
     }
   };
 
+  const handleAudioLevel = (level: number) => {
+    setAudioLevel(level);
+  };
+
   return (
-    <button
-      onClick={toggleListening}
-      className={`p-2 rounded-full ${
-        isListening 
-          ? 'bg-red-500 hover:bg-red-600' 
-          : 'bg-blue-500 hover:bg-blue-600'
-      } text-white transition-colors`}
-      title={isListening ? 'Stop recording' : 'Start recording'}
-    >
-      {isListening ? <FaStop size={20} /> : <FaMicrophone size={20} />}
-    </button>
+    <div className="flex items-center space-x-4">
+      <button
+        onClick={toggleListening}
+        className={`p-3 rounded-full ${
+          isListening 
+            ? 'bg-red-500 hover:bg-red-600' 
+            : 'bg-blue-500 hover:bg-blue-600'
+        } text-white transition-colors relative`}
+        title={isListening ? 'Stop recording' : 'Start recording'}
+      >
+        {isListening ? <FaStop size={20} /> : <FaMicrophone size={20} />}
+        {isListening && audioLevel > 10 && (
+          <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+        )}
+      </button>
+      
+      <div className="flex-grow max-w-[100px]">
+        <AudioLevelIndicator 
+          isListening={isListening} 
+          onLevelUpdate={handleAudioLevel}
+        />
+      </div>
+    </div>
   );
 };
 

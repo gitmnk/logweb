@@ -35,4 +35,8 @@ next-env.d.ts
 
 # database
 *.db
-*.db-journal 
+*.db-journal
+
+# ngrok configuration
+ngrok.yml
+.ngrok* 
